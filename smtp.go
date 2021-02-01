@@ -1,6 +1,7 @@
 package smtp
 
 import (
+	"log"
 	"strconv"
 	"strings"
 
@@ -17,17 +18,17 @@ type SMTPConfig struct {
 	SSL       bool
 }
 
-func CheckPort25(hostname string) (SMTPConfig, error) {
+func CheckPort25(hostname string) (*SMTPConfig, error) {
 	smtp, err := CheckPort(hostname, "25")
 	return smtp, err
 }
 
-func CheckPort465(hostname string) (SMTPConfig, error) {
+func CheckPort465(hostname string) (*SMTPConfig, error) {
 	smtp, err := CheckPort(hostname, "465")
 	return smtp, err
 }
 
-func CheckPort(hostname, port string) (SMTPConfig, error) {
+func CheckPort(hostname, port string) (*SMTPConfig, error) {
 	tcp := tcp.NewConfig()
 	smtp := NewConfig()
 	err := tcp.Connect(hostname, port)
@@ -36,40 +37,40 @@ func CheckPort(hostname, port string) (SMTPConfig, error) {
 		return smtp, err
 	}
 
-	smtp.SetConfigInfo(tcp)
-	smtp.SMTPSummaryCheck()
-	smtp.TCPConfig.CloseConnection()
+	smtp.SMTPSummaryCheck(tcp)
 	return smtp, nil
 }
 
-func (s *SMTPConfig) SMTPSummaryCheck() {
-	s.Connected = true
-	resp := s.SendRequest("AUTH LOGIN")
+func (s *SMTPConfig) SMTPSummaryCheck(tcp *tcp.TCPConfig) {
+	resp := s.SendRequest(tcp, "AUTH LOGIN")
+	if len(resp) == 0 {
+		return
+	}
 	status, err := strconv.Atoi(resp[:3])
+	s.Connected = true
 	if err == nil {
 		s.Status = status
 		if status == 500 {
 			s.AUTH = true
 		}
 	}
-	if strings.Contains(strings.ToLower(resp), "available only with tls or ssl") {
+	if strings.Contains(strings.ToLower(resp), "available only with ssl or tls") {
 		s.SSL = true
 	}
 }
 
-func (s *SMTPConfig) SendRequest(req string) string {
+func (s *SMTPConfig) SendRequest(tcp *tcp.TCPConfig, req string) string {
 	var resp string
-	tcp := s.TCPConfig
-	_ = tcp.ReadTCPMessage()
-	tcp.WriteTCPMessage([]byte(req))
+	asd := []byte(req + "\n")
+	tcp.ReadTCPMessage()
+	if err := tcp.WriteTCPMessage(asd); err != nil {
+		log.Printf("Could not write msg: %s", err)
+		return ""
+	}
 	resp = string(tcp.ReadTCPMessage())
 	return resp
 }
 
-func (s *SMTPConfig) SetConfigInfo(tcp *tcp.TCPConfig) {
-	s.TCPConfig = *tcp
-}
-
-func NewConfig() SMTPConfig {
-	return SMTPConfig{}
+func NewConfig() *SMTPConfig {
+	return &SMTPConfig{}
 }
